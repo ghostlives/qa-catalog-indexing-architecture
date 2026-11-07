@@ -1,0 +1,41 @@
+{
+  "mock_data": true,
+  "feature_id": "FEATURE-ORDER-CANCEL",
+  "source_requirement": "Given a shipped order, a cancellation request is rejected, the order state remains unchanged, and no refund is initiated.",
+  "catalog_scope_complete": false,
+  "decisions": [
+    {
+      "obligation_id": "O1",
+      "obligation": "Cancellation rejected",
+      "status": "POTENTIALLY_COVERED",
+      "candidate_test_ids": [
+        "example-org/order-automation:OrderCancelTests.CancelShippedOrder_ReturnsConflict"
+      ],
+      "evidence_required": ["Inspect assertion and fixture at pinned source SHA"]
+    },
+    {
+      "obligation_id": "O2",
+      "obligation": "Order state remains unchanged",
+      "status": "PARTIAL",
+      "candidate_test_ids": [
+        "example-org/order-automation:OrderCancelTests.CancellationPreservesState"
+      ],
+      "evidence_required": ["Inspect helper and full assertion execution path"]
+    },
+    {
+      "obligation_id": "O3",
+      "obligation": "No refund initiated",
+      "status": "UNKNOWN",
+      "candidate_test_ids": [
+        "example-org/order-automation:RefundContractTests.DoesNotSendRefundOnInvalidCancellation"
+      ],
+      "evidence_required": [
+        "Inspect VerifyNoRefund implementation",
+        "Search allowed shared E2E repositories"
+      ]
+    }
+  ],
+  "overall_recommendation": "REVIEW",
+  "reason": "No proof of all obligations yet; multi-repository search scope is incomplete.",
+  "note": "Synthetic evaluator output showing evidence-first semantics, not actual verified test coverage."
+}

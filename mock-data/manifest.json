@@ -1,0 +1,21 @@
+{
+  "mock_data": true,
+  "schema_version": "1.0",
+  "repository": "example-org/order-automation",
+  "source_branch": "main",
+  "source_commit_sha": "1111111111111111111111111111111111111111",
+  "catalog_revision": "SYNTHETIC-NOT-COMPUTED",
+  "indexer_version": "0.1.0-design",
+  "config_revision": "mock-config-v1",
+  "snapshot_status": "complete",
+  "total_logical_tests": 3,
+  "total_execution_variants": 4,
+  "unmapped_discoveries": 0,
+  "files": [
+    {
+      "path": "tests.jsonl",
+      "sha256": "SYNTHETIC-NOT-COMPUTED"
+    }
+  ],
+  "note": "Illustrative design fixture only; references and integrity hashes are not real."
+}
