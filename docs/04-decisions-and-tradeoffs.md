@@ -1,69 +1,65 @@
-# 04 — Architectural Decisions and Trade-offs
+# 04 — Design Decisions and Trade-offs
 
-These are **proposed decisions**, intended to be reviewed against the real enterprise environment. They establish direction without defining implementation.
+The following choices are recommended for an initial solution. They should be checked against existing repository policies, test frameworks and Rally access before implementation.
 
 ## Decision summary
 
-| # | Decision | Rationale | Trade-off |
-| --- | --- | --- | --- |
-| D1 | **Deterministic, framework-aware indexing** | Inventory 1,000+ TCs without LLM cost | Does not infer full semantic behavior |
-| D2 | **Keep catalogs per automation repo** | Preserves team ownership and source provenance | Federated search must handle many catalogs |
-| D3 | **Separate `qa-catalog` branch from `main`** | Derived files do not pollute development history | Need controlled publication and freshness tracking |
-| D4 | **Use `gh` CLI as initial access path** | No checkout or MCP service required | Local caching and search responsibility |
-| D5 | **Refresh Rally observations independently** | Results and Rally TC existence can change without code merges | Two distinct freshness dimensions |
-| D6 | **Normalize requirements before QA planning** | Supports SpecKit and custom SDD | Requires agreement on a common obligation model |
-| D7 | **Reuse-first, evidence-backed evaluation** | Limits duplicate automation and false coverage claims | Some decisions require more investigation or human review |
-| D8 | **Add centralized/semantic search only when needed** | Keeps the PoC lightweight | Lexical retrieval can initially miss conceptually related tests |
+| Decision | Why | Limitation |
+| --- | --- | --- |
+| Index test metadata without an LLM | Avoids model cost for thousands of tests | Static analysis cannot explain every test behavior |
+| Keep a catalog per automation repo | Teams keep ownership of their tests | Queries may need data from several repos |
+| Store catalogs on `qa-catalog` branches | Generated changes stay out of `main` | Publication and version checks are needed |
+| Read catalogs through `gh` | Works with local coding agents without MCP | Clients need authentication, caching and search |
+| Refresh Rally separately | Rally records and results change without code merges | Rally data can be stale or access restricted |
+| Search before creating tests | Reduces unnecessary test creation | Search results still need coverage review |
+| Start with local search | No new central infrastructure for a pilot | Cross-repo search may become slower at scale |
 
-## Why a separate branch instead of generated commits on main?
+## Catalog storage: main, separate branch or external storage?
 
-**Considered approaches:** commit catalog to main, publish to a dedicated branch, or store externally.
+Committing the catalog to `main` would keep source and generated data together, but every update would add another commit or PR change. It could also conflict with branch protection rules.
 
-**Proposed:** a separate branch per automation repo.
+A separate `qa-catalog` branch keeps the source history clean and lets Git track catalog versions. The catalog must identify the source revision it describes. Publishing an older snapshot after a newer merge must not make that older snapshot appear current.
 
-- Keeps feature PRs and main history focused on automation changes.
-- Maintains a source-linked, auditable derived artifact.
-- Makes adoption possible without a new always-on search service.
+External storage could simplify search across many repositories, but adds infrastructure and permissions to manage. There is no clear need for it before a pilot measures local search performance.
 
-**Costs and limits:** branch access permissions, publication ordering and repository history growth need governance. If those become expensive, storage can evolve independently of the catalog's logical contract.
+**Recommendation:** start with a separate catalog branch. Reconsider storage if branch permissions, size or cross-repo access become difficult to manage.
 
-## Why GitHub CLI instead of MCP?
+## Catalog access: GitHub CLI or a service?
 
-The QA agent already has terminal capabilities and can leverage authorized GitHub tooling. A small CLI-oriented retrieval layer can fetch selected catalog content, cache it, search locally and return bounded results.
+A coding agent already able to run terminal tools can use `gh` to read catalog content at a specific branch. A local search utility can filter it before returning candidates to the model.
 
-MCP is **not prohibited as a future interface**, but it is not an architectural prerequisite. More important than the interface is ensuring that raw catalog data does not flood the LLM context.
+This avoids deploying an MCP server or requiring catalog branches to be checked out. However, `gh` only retrieves data; it is not a search engine. Good filtering, caching and candidate ranking still need to be provided outside the LLM.
 
-## Why not enrich every test using an LLM at indexing time?
+**Recommendation:** use `gh` for access in the first version. Consider a shared search service only when multiple users or many repositories make local search impractical.
 
-At thousands of tests per repository, full AI enrichment adds ongoing cost and creates subjective representations that may look authoritative while being incorrect.
+## Indexing: source signals or AI-generated descriptions?
 
-Instead, indexing records objectively observable information. Semantic understanding is applied to a small number of retrieved candidates during QA analysis.
+An LLM could summarize every test, but doing this after each merge would create recurring cost. The summaries could also claim behavior that the code does not actually verify.
 
-This leaves a real challenge: lexical metadata can miss relevant E2E tests with indirect service relationships. Retrieval quality needs measurement and may justify selective enrichment later.
+Framework discovery and source analysis offer a more predictable starting point. They can collect names, tags, file locations and some assertion or API signals without model calls.
 
-## Why are Rally data and source data separate?
+The trade-off is search quality. A shared E2E test may be relevant even if none of those fields name the changed service. Source inspection and wider repository search remain necessary.
 
-A source merge changes automation code; a Rally record may be deleted, restored, edited or updated with a recorded result without a merge. Forcing both into a single source-tied snapshot would either produce stale Rally metadata or require unnecessary source rescans.
+**Recommendation:** begin with source-derived information and measure how often it misses tests known to QA. Add more advanced search only if the results justify it.
 
-**Proposed:** one source-linked catalog and one independently observed Rally metadata layer, joined only when identity and freshness can be established.
+## Rally: one catalog or separate update cycles?
 
-Not finding a Rally TC is **not** equivalent to confirmed deletion. Last recorded verdict is **not** live runtime status or proof that an assertion is correct.
+Linking Rally information to a test catalog is useful, but source code and Rally records do not change at the same time. A test result might be recorded in Rally days after the last source merge.
 
-## Why not treat similar tests as duplicate?
+A separate Rally refresh lets the system update that information without rescanning the tests. The catalog must preserve the distinction between a source revision, the time Rally was checked, and the result's actual recorded date.
 
-Two tests can cover the same business rule but validate different integration boundaries and risks—for example, API integration vs browser E2E. Reuse decisions consider verification objectives, test layer, test evidence and purpose, not string or embedding similarity alone.
+An unavailable Rally TC should be flagged for review, not marked deleted without evidence. A stored Pass or Fail should not be presented as the status of the latest CI run.
 
-## Evaluator–Optimizer's role
+**Recommendation:** keep Rally observations separate from source-indexed test information, even if the initial storage is in the same branch. Review data access before publishing Rally fields to GitHub.
 
-The pattern can help refine requirement interpretation, expand searches, inspect ambiguous coverage and improve the proposed QA plan. It should not automatically invent missing business requirements, delete tests linked to unavailable Rally cases, or create new automation because retrieval found no initial match.
+## When can QA reuse or create a test?
 
-## Alternatives deliberately left open
+A test title or search score can point QA to a candidate; it cannot confirm coverage. A useful decision needs the scenario, expected outcome, existing test setup and assertions. The required test level also matters: API integration coverage does not always replace E2E coverage.
 
-Central search infrastructure, graph-based impact analysis, embeddings/vector search, richer Rally field integration and detailed test-identity mechanisms remain options. They are not requirements for the architecture's first validation.
+**Recommendation:** use the Evaluator–Optimizer pattern to review and refine these decisions. When search scope, source evidence or requirements are incomplete, return REVIEW rather than making a confident CREATE or REUSE recommendation.
 
-## Architectural constraints
+## Constraints to resolve
 
-- Existing enterprise GitHub permissions and branch policies must be respected.
-- The solution must support repositories where GitHub Actions runners are unavailable, via another approved CI capability.
-- The catalog must remain portable and model-provider-agnostic.
-- Human QA retains authority for uncertain high-risk coverage and test-retirement decisions.
+GitHub Actions runners may not be available in every enterprise repository. The indexing approach should therefore be usable with another approved CI system. Repository permissions and Rally visibility must also be checked before deciding where catalog information can be stored.
+
+No decision here depends on a particular LLM provider, database or programming language.

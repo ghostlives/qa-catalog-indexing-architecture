@@ -1,121 +1,120 @@
-# 03 — Reference Solution Architecture
+# 03 — System Architecture
 
-## Architecture overview
+## Overview
 
-The proposed solution has **two independent information flows** feeding a **reuse-first QA decision flow**:
+The design separates **catalog maintenance** from **QA analysis**.
 
-- **Source-driven flow:** automation repositories publish a lightweight catalog when source code changes.
-- **Rally-driven flow:** Rally observations are refreshed separately when link validity or recorded result metadata may have changed.
-- **QA consumption flow:** a coding agent uses compact catalog search results and only requests detailed source evidence for relevant cases.
+Catalog maintenance runs when source code changes or when Rally information needs to be refreshed. QA analysis runs when a team reviews a feature and needs to find existing tests. Keeping these activities separate avoids rescanning repositories or calling Rally for every QA request.
 
 ```mermaid
 flowchart TB
-  subgraph Sources["Existing enterprise systems"]
-    B["Backend automation repos"]
-    F["Frontend automation repos"]
-    E["Shared cross-service E2E repos"]
-    R["Rally"]
-    S["SpecKit / Custom SDD / other specs"]
-  end
-  subgraph Knowledge["Test intelligence layer"]
-    I["Source-driven test indexing"]
-    C["Versioned catalog per repository"]
-    H["Independent Rally enrichment"]
-    Q["Catalog access + local search"]
-    N["Requirement normalization"]
-  end
-  subgraph Reasoning["QA workflow"]
-    D["Impact-aware test discovery"]
-    V["Evidence-based evaluator"]
-    O["Reuse / Extend / Create / Review"]
-  end
-  B --> I
-  F --> I
-  E --> I
-  I --> C
-  R --> H
-  H --> C
-  S --> N
-  C --> Q
-  N --> D
-  Q --> D
-  D --> V
-  V --> O
+    subgraph Systems["Existing systems"]
+        A["Backend and frontend automation repos"]
+        E["Shared E2E automation repos"]
+        R["Rally"]
+        S["SpecKit / custom SDD"]
+    end
+    subgraph Catalog["Catalog maintenance"]
+        I["Test indexing"]
+        H["Rally lookup and result refresh"]
+        C["Versioned catalogs"]
+    end
+    subgraph QA["Feature QA analysis"]
+        N["Read requirements"]
+        Q["Search relevant catalogs"]
+        V["Review tests and coverage"]
+        O["Reuse / Extend / Create / Review"]
+    end
+    A --> I
+    E --> I
+    I --> C
+    R --> H
+    H --> C
+    S --> N
+    N --> Q
+    C --> Q
+    Q --> V
+    V --> O
 ```
 
-## Logical building blocks
+## Main components
 
-### 1. Source repositories and automation ownership
+### Automation repositories
 
-The source repositories remain the source of truth for tests, fixtures and automation behavior. Test definitions may cover a single service or an E2E journey that indirectly crosses several services.
+Backend, frontend and shared E2E repositories continue to own their tests. The solution does not move tests into a common repository.
 
-**Architectural implication:** the system must search across appropriate repository scopes; a purely service-local view is insufficient.
+Each test catalog is tied to a specific source revision. This matters when test names, assertions or helper code change.
 
-### 2. Test catalog indexer
+### Test indexing
 
-A repository-owned indexing process inventories framework-discoverable tests and extracts useful, **observed** signals such as identifiers, tags, source pointers and selected assertion or API-call hints. Indexing is deterministic and model-independent.
+The indexing process runs after changes reach a repository's `main` branch, using GitHub Actions where runners are available. It collects the tests that the framework can discover, together with information useful for searching them.
 
-**Architectural implication:** indexing does not attempt to prove business coverage. When extraction is incomplete, the index advertises that limitation.
+The indexer does not use an LLM. It cannot always resolve dynamic tests, helper logic or indirect service dependencies. Such gaps must be visible rather than presented as complete coverage.
 
-### 3. Versioned catalog storage
+### Catalog storage
 
-Catalogs are derived, versioned metadata associated with the exact source repository revision. The proposed initial storage model is a dedicated `qa-catalog` branch in each automation repository, separate from `main`.
+For the initial design, each automation repository publishes generated catalog information to a separate `qa-catalog` branch. This keeps generated changes out of feature PRs and the `main` branch history.
 
-**Architectural implication:** Git provides provenance without generated catalog changes entering feature history. A separate branch is **storage**, not a search engine.
+The catalog stores test information and references back to source. It is not a replacement for test code. Readers need to know the source revision and whether the catalog is up to date.
 
-### 4. Rally enrichment
+### Rally data refresh
 
-Links to Rally TCs are captured from automation metadata. Independently refreshed Rally observations can identify accessible records, unresolved links and the **last result recorded in Rally**.
+Rally TC references come from automation metadata. A separate read-only lookup checks the linked records and reads the last result stored in Rally, if available.
 
-**Architectural implication:** Rally is a separate lifecycle. A new Rally result does not need a new source merge or source reindex. A source snapshot and Rally observation can have different freshness.
+This process does not depend on a code merge. A Rally record or result may change while the automation source stays unchanged.
 
-### 5. Catalog access and retrieval
+The catalog reader must distinguish:
+- A Rally TC that was found.
+- A TC that could not be resolved, including permission-related cases.
+- A TC whose deletion has been confirmed.
+- A TC with no recorded result.
+- A historical result that may be old.
 
-For an initial deployment, a local QA agent can use **GitHub CLI (`gh`)** to retrieve catalog content from the designated branch, cache it, and perform deterministic lexical/metadata search before handing a concise shortlist to the LLM.
+The last recorded Rally result is not a current CI result.
 
-**Architectural implication:** neither MCP nor checkout of every catalog branch is required. An optional central search layer may later federate many repositories, subject to access controls.
+### Catalog search
 
-### 6. Requirement interpretation
+A local QA agent can use GitHub CLI (`gh`) to retrieve catalog files from the `qa-catalog` branch and cache them. It does not have to check out that branch into the working repository.
 
-Feature specifications from different frameworks are mapped into a **canonical set of atomic, verifiable requirements**. Each obligation keeps a reference to the original source document.
+Search first uses test metadata and source references. Only relevant candidates are sent to the model for further analysis. If needed, the agent reads the test code at the source revision referenced by the catalog.
 
-**Architectural implication:** QA planning is independent of SpecKit/custom-SDD file templates, while preserving ambiguity and provenance.
+There is no requirement for an MCP server or a central search database in the initial design. A shared search service may become useful when the number of repositories, users or queries grows.
 
-### 7. Reuse-first coverage evaluation
+### Requirement analysis and QA decisions
 
-The QA agent uses impact scope to find relevant tests, then examines only selected source and execution evidence. The evaluator decides whether obligations are already verified, partially verified, absent within a sufficiently inspected scope, or uncertain.
+Requirements from SpecKit or custom SDD documents are interpreted as testable scenarios with links to their original source. The workflow identifies the likely services and E2E journeys, searches their catalogs and checks candidate tests.
 
-**Architectural implication:** reuse recommendations are evidence-backed, and CREATE is gated by coverage analysis rather than similarity alone.
+The final recommendation is to reuse an existing test, extend one, create a new one or request QA review. The evaluator can repeat the search with better terms when evidence is insufficient, but should not treat an empty search result as proof of a coverage gap.
 
-## Two independent update lifecycles
+## Data flow
 
 ```mermaid
 sequenceDiagram
-  participant Main as Automation main
-  participant CI as Catalog indexing
-  participant Store as qa-catalog storage
-  participant Rally as Rally enrichment
-  participant QA as QA agent
-  Main->>CI: Source change after merge
-  CI->>Store: Publish source-linked catalog revision
-  Rally->>Store: Independently refresh Rally observations
-  QA->>Store: Retrieve relevant catalog information
-  QA->>QA: Search, inspect selected evidence, evaluate
+    participant Repo as Automation repo
+    participant Index as Catalog indexer
+    participant Cat as qa-catalog
+    participant Rally as Rally
+    participant Agent as QA agent
+
+    Repo->>Index: main changes
+    Index->>Cat: Updated source-linked test catalog
+    Rally->>Cat: Separately refreshed TC information
+    Agent->>Cat: Read relevant catalogs via gh
+    Agent->>Agent: Search and shortlist existing tests
+    Agent->>Repo: Read selected test source at indexed revision
+    Agent->>Agent: Assess coverage and prepare QA plan
 ```
 
-This is a **logical sequence**, not a prescription for a specific CI implementation. The system must visibly distinguish the freshness of source metadata and Rally observations.
+The diagrams show the intended responsibilities, not a detailed CI or API sequence.
 
-## Security and trust boundaries
+## System boundaries
 
-- **GitHub repository authorization:** a user or agent must not retrieve metadata for repositories it cannot read.
-- **Rally authorization:** Rally visibility may differ from GitHub visibility. Rally-derived fields must not be published to a broader audience without approval.
-- **LLM context boundary:** catalog records and source comments are untrusted task data; tools should pass bounded information and not treat embedded instructions as commands.
-- **Evidence boundary:** historical Rally results are not live CI health. Search results are not confirmed test coverage.
+**Access:** Repository permissions still apply. Rally data may have different access restrictions; only information permitted for the catalog's readers should be stored there.
 
-## Deployment evolution (conceptual)
+**Freshness:** Source indexing and Rally lookups have separate timestamps. If either is stale or unavailable, QA must see that limitation.
 
-**Initial solution:** per-repository catalogs + `gh` retrieval + local cache for a bounded group of repositories.
+**Test results:** A Rally verdict reflects a result recorded in Rally. A current automation result must come from a separate CI or test execution source.
 
-**Enterprise evolution, if needed:** federated search, richer cross-service relation data and optional semantic retrieval—introduced only after measuring retrieval quality and operating cost.
+**Scope:** Searching only the service being changed may miss shared E2E coverage. The QA workflow needs a way to include relevant surrounding repositories.
 
-No specific database, language parser, workflow YAML, command sequence or schema is mandated in this architecture document.
+**Scale:** Initial access through `gh` and local search avoids a new service. It also means each local client manages its cache; a shared index may be justified later.

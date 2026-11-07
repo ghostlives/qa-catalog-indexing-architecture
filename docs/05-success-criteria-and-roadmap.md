@@ -1,85 +1,81 @@
-# 05 — Success Criteria, Scope and Evolution
+# 05 — Validation and Next Steps
 
-## How should this solution be judged?
+## What we need to prove
 
-The architecture should be validated by whether it makes QA decisions **more correct and more efficient**, not by how many catalog records or AI-generated test cases it produces.
+The value of this design is not the size of the catalog. It is whether QA can find the right existing tests, make better coverage decisions and spend less time preparing test plans.
 
-| Outcome | Measure | Why it matters |
-| --- | --- | --- |
-| Better existing-test discovery | Recall of QA-confirmed relevant TCs among retrieved candidates | Prevents missed reuse opportunities |
-| Safer reuse decisions | Precision of COVERED/REUSE assessments | Avoids false confidence and missing tests |
-| Lower duplicate creation | Reduction in tests later judged unnecessary | Reduces long-term maintenance |
-| Better traceability | Ability to link requirements, automation source and Rally references | Explains the decision |
-| Token efficiency | Model context and cost per accepted QA plan | Makes scaling across repos viable |
-| Trustworthy metadata | Visibility of catalog/Rally freshness and unresolved links | Prevents misleading conclusions |
-| Better QA workflow | Human acceptance and time required for QA analysis | Measures operational usefulness |
+We should test the approach using past features for which QA engineers already know which tests were relevant. Those examples provide a baseline for reviewing search results and coverage decisions.
 
-These are **evaluation dimensions**, not predetermined pass thresholds. Thresholds should be set using real historical features and QA-reviewed ground truth.
+## Measures
 
-## Suggested architectural validation journey
-
-### Stage 1 — Validate the problem with one service domain
-
-Select a representative service automation repo and a relevant shared E2E repo. Review recent features for which teams know which tests should have been reused or extended.
-
-**Question:** Can the proposed catalog describe the relevant test inventory without losing key context?
-
-### Stage 2 — Validate reuse-first discovery
-
-Demonstrate that a QA workflow can retrieve relevant candidates without feeding an entire catalog into the model, and can explain why a test does or does not cover an acceptance criterion.
-
-**Question:** Does this reduce duplicate proposals while maintaining safe coverage decisions?
-
-### Stage 3 — Validate Rally traceability
-
-Examine linked Rally TCs with several states: accessible, unavailable, confirmed deleted, no recorded result and historical pass/fail. Ensure these are distinguished from CI runtime execution.
-
-**Question:** Does Rally enrichment improve decisions without creating false certainty?
-
-### Stage 4 — Assess multi-repository viability
-
-Evaluate additional service-level and shared E2E repos for discovery accuracy, query relevance, access boundaries and operating cost.
-
-**Question:** Can this remain lightweight, or is centralized search justified?
-
-## Key risks and mitigations
-
-| Risk | Architecture-level mitigation |
+| Measure | What it tells us |
 | --- | --- |
-| Incomplete test discovery | Explicit catalog completeness and uncertainty |
-| Test name/title does not reveal behavior | Source-backed evidence and staged inspection |
-| E2E dependencies are not obvious | Cross-repo search scope with future impact graph enrichment |
-| Rally missing records caused by permissions | Separate unavailable/unknown from confirmed deletion |
-| Historical Rally results are confused with live outcomes | Separate recorded-result and runtime-state concepts |
-| Stale catalogs after merges | Pin catalog to source revision and expose freshness |
-| Sensitive Rally fields leak through GitHub | Enforce source-specific authorization and field governance |
-| LLM overconfidence and duplicate test generation | Reuse-first evaluation and human review for ambiguity |
-| GitHub Actions runner unavailable | CI-independent indexing capability and alternate approved runner |
+| Relevant test recall | How often the search finds existing tests that QA identified as relevant |
+| Reuse decision accuracy | Whether REUSE recommendations are supported by the actual tests |
+| Unnecessary new tests | How often the workflow proposes a TC that should have been reused or extended |
+| QA review effort | How much manual investigation the proposed workflow still requires |
+| Model usage | Tokens and cost spent on an accepted QA plan |
+| Catalog completeness | Whether framework-discovered tests are represented or explicitly reported as unmapped |
+| Catalog freshness | Whether test data matches the intended source revision |
+| Rally link quality | How many references resolve and how many need investigation |
 
-## High-level implementation boundary
+Set useful thresholds after reviewing actual repositories and historical examples. A single generic accuracy target would hide important differences between test discovery and coverage evaluation.
 
-This repository is **not** intended to define:
-- Framework-specific AST/parser mappings.
-- GitHub Actions YAML and authentication configuration.
-- JSON schema, test identity algorithms, or example payloads.
-- Rally WSAPI request structure, pagination or field-level integration.
-- CLI flags, commands, cache tables, data models or source code.
-- Operational playbooks and step-by-step delivery tasks.
+## Suggested validation stages
 
-Such artifacts belong in a later **Detailed Design / Implementation** repository or workstream once the solution architecture is approved.
+### Stage 1 — One automation repository
 
-## Open decisions for architecture review
+Pick an automation repository with a representative number of tests, ideally more than 1,000. Confirm that the catalog can account for framework-discovered tests and help find them by name, metadata and source location.
 
-1. What repository groups should be searchable together for a feature?
-2. What minimum evidence allows REUSE vs EXTEND vs CREATE?
-3. What is the acceptable freshness of source and Rally metadata?
-4. Can Rally-derived metadata be stored inside automation repos under existing access controls?
-5. Do source tests always have a single Rally link, or are many-to-one and one-to-many relations common?
-6. What does “valid Rally TC” mean in this organization: existence, lifecycle state, or project-specific rules?
-7. Are GitHub Actions runners available for all target repos?
-8. How will human-labeled historical features be collected for evaluation?
-9. When would local retrieval stop meeting multi-repository scale/performance needs?
+**Main question:** Is the catalog complete enough to use for initial test discovery?
 
-## Decision requested
+### Stage 2 — Shared E2E coverage
 
-Approve the **architecture direction**—per-repository catalogs, independent Rally enrichment, requirement normalization, `gh`-based selective retrieval, and evidence-first reuse decisions—before investing in detailed implementation design.
+Add a shared E2E repository that touches the same service domain. Use recent feature changes to see whether searches find tests outside the service's own automation repo.
+
+**Main question:** Can the search find relevant cross-service tests that are not obvious from their names?
+
+### Stage 3 — Requirement review
+
+Compare requirements from SpecKit and custom SDD documents. Check whether QA can reach the same expected behaviors and identify missing information before evaluating test coverage.
+
+**Main question:** Does the requirement format affect the quality of the QA plan?
+
+### Stage 4 — Rally information
+
+Use examples of valid Rally TCs, missing or inaccessible links, TCs with no results and TCs with older recorded results.
+
+**Main question:** Can QA use Rally data without confusing historical results with current execution?
+
+### Stage 5 — Evaluate QA decisions
+
+Use historical features with QA-reviewed test mappings. Compare the proposed workflow with current manual search and a baseline that generates scenarios without checking the catalog.
+
+**Main question:** Does the approach find more existing coverage and reduce unnecessary test creation at an acceptable cost?
+
+## Main risks
+
+| Risk | What to check during validation |
+| --- | --- |
+| Relevant E2E tests are not found | Search across related repositories and compare with QA-known cases |
+| Tests are discovered but not understood | Check source assertions and helper dependencies for selected candidates |
+| Source catalog is stale | Verify the referenced source revision before coverage review |
+| Rally TC cannot be accessed | Report the uncertainty; do not assume deletion |
+| Rally stored result is old | Show the result date separately from lookup date and CI status |
+| Catalog access differs between teams | Confirm GitHub and Rally permissions before sharing data |
+| Local search does not scale | Measure retrieval time and maintenance cost before proposing a central index |
+
+## Decisions needed before detailed design
+
+The architecture review should settle four things:
+
+1. **Search scope:** Which service and shared E2E repositories should be considered for a feature?
+2. **Coverage review:** What evidence is sufficient for REUSE, EXTEND or CREATE, and when must a QA engineer review it?
+3. **Rally interpretation:** What defines a valid Rally TC in this organization, and which result information may be stored with the catalog?
+4. **Operating constraints:** Which repositories have CI runners and permissions to publish catalog data, and what freshness is acceptable?
+
+## Next step
+
+Run a small proof of concept with one service automation repository and one shared E2E repository. Use a set of historical features to validate existing-test discovery, Rally references, requirement interpretation and token cost.
+
+Only after that review should the team decide whether detailed indexing specifications, a shared search service or more advanced retrieval methods are necessary.

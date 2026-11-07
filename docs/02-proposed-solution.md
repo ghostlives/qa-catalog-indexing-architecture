@@ -1,85 +1,85 @@
 # 02 — Proposed Solution
 
-## Solution concept: Reuse-First QA Test Intelligence
+## Summary
 
-Create a **federated test catalog** that provides an efficient entry point to test discovery without collecting entire repositories in an LLM prompt.
+Use a catalog for each automation repository and search those catalogs before creating test cases. The catalog gives QA a way to locate existing tests; it does not try to describe every business behavior in full.
 
-The system consists of four complementary capabilities:
+The solution has four parts: **test catalog indexing, Rally data refresh, requirement analysis, and existing-test review**.
 
-| Capability | Responsibility | Primary outcome |
-| --- | --- | --- |
-| **Catalog Indexing** | Discover tests in each automation repository and retain source-backed metadata | Known test inventory with provenance |
-| **Rally Enrichment** | Resolve linked Rally records and observe their last recorded results | Traceability, validity uncertainty and historical context |
-| **Requirement Interpretation** | Normalize feature specs into QA-verifiable obligations | A consistent QA analysis input |
-| **Reuse-First Evaluation** | Find relevant tests, inspect evidence and decide whether to reuse, extend or create | Justified QA plan with minimal duplication |
+## 1. Build a catalog from automation source
 
-## Architectural principles
+When a repository changes, an indexing process identifies the tests it contains and records useful information such as test identity, source location, tags and available assertion or API signals.
 
-**1. Separate indexing from reasoning.** Test discovery and metadata generation are deterministic; LLM evaluation is reserved for ambiguous semantic coverage questions.
+Framework test discovery and source analysis provide this information without asking an LLM to read every test. A catalog stays linked to the source version it describes, so readers can tell whether it is current.
 
-**2. Reuse before creation.** Generation is conditional on review of relevant existing test evidence—not the first step.
+The catalog is stored separately from source code changes. The initial proposal uses a `qa-catalog` branch in each repository rather than adding generated files to `main`.
 
-**3. Preserve source ownership.** Each automation repository remains authoritative for its tests and publishes a derived, versioned catalog.
+**Limit:** source analysis can identify code patterns, but it cannot always determine the business meaning of a test—particularly when fixtures, helpers, mocks or page objects hide the details.
 
-**4. Keep independent freshness dimensions.** Source code and Rally data evolve separately. A catalog revision is not evidence that Rally's stored result is current.
+## 2. Add Rally information without rescanning source
 
-**5. Search first, inspect progressively.** Metadata narrows the search; source and assertion details are loaded only for shortlisted candidates.
+Each automation test is expected to have a Rally TC reference. The source index records that link. Rally is then queried separately to check whether the linked case can be found and, when available, to read its last recorded result.
 
-**6. Surface uncertainty.** Incomplete retrieval, permissions, and ambiguous requirements lead to REVIEW/UNKNOWN rather than confident but unsupported decisions.
+These are distinct pieces of information:
 
-**7. Minimize operational friction.** Leverage existing GitHub Actions and GitHub CLI; a dedicated MCP server or centralized vector database is not required for an initial solution.
+| Information | How QA should use it |
+| --- | --- |
+| Source test exists | Confirms that a test definition is present at the indexed version |
+| Rally TC can be found | Confirms that the linked record was accessible during the last check |
+| Rally TC cannot be found | Indicates a link to investigate; deletion is not yet confirmed |
+| Last result stored in Rally | Provides historical context with a recorded date |
+| Current CI test result | Describes the outcome of an actual automation run, if separately available |
 
-## Conceptual data model
+Rally data may change between source merges. Its refresh schedule and freshness therefore need to be independent of catalog indexing. Any Rally metadata stored alongside a repository catalog must comply with Rally access restrictions.
 
-```mermaid
-flowchart LR
-  R["Requirement obligation"] --> D["Coverage assessment"]
-  T["Automation test definition"] --> D
-  T --> V["Execution variants"]
-  T --> L["Rally reference"]
-  L --> O["Rally observation"]
-  O --> H["Historical recorded result"]
-  T --> P["Repository source provenance"]
-```
+## 3. Read requirements consistently
 
-The diagram is **conceptual**: it does not prescribe database tables or API contracts.
+A feature can start from SpecKit, a custom SDD or another specification. QA analysis should extract the same basic information regardless of format:
 
-- **Automation test:** A logical test definition in code.
-- **Execution variant:** One possible runnable configuration or parameterization.
-- **Rally reference:** Link from automation to test-management identity, which may have a many-to-one relationship.
-- **Rally observation:** A timestamped view of whether the linked TC could be resolved and what Rally last recorded.
-- **Requirement obligation:** An independently verifiable expected behavior extracted from a feature.
-- **Coverage assessment:** A reasoned relationship between an obligation and available test evidence.
+- What behavior is being changed?
+- Under what conditions should it happen?
+- What outcomes should be verified?
+- Which services or end-to-end journeys might be affected?
+- What is missing or unclear?
 
-## The Rally distinction
+The original requirement reference is retained so QA can check the interpretation. If a rule is ambiguous, the workflow should ask for review rather than inventing a business requirement.
 
-Three independent questions must be answered:
+## 4. Search first, then check actual coverage
 
-| Question | Authoritative context | Interpretation |
-| --- | --- | --- |
-| Does the automation test exist? | Source repository and test discovery | Source inventory |
-| Does the linked Rally Test Case exist and remain accessible? | Rally under an authorized workspace/project | Resolved, uncertain, inaccessible or confirmed deleted |
-| What was Rally's last recorded result? | Rally result record or documented aggregate field | Historical observation, not a current runtime result |
+The agent searches catalogs from the services and E2E repositories likely to be affected. Metadata and text search reduce the candidates before the model reads test bodies or related source code.
 
-A Rally TC may be **unavailable** because it was deleted, moved, or is outside the caller's permissions. A failed lookup alone is not proof of deletion. Even a confirmed deleted Rally case is a traceability issue and does not prove the automation code is invalid.
+For shortlisted tests, QA evaluates the setup, assertions and scope against the requirement. This leads to one of four recommendations:
 
-## End-to-end QA decision flow
+| Decision | When to use it |
+| --- | --- |
+| **REUSE** | An existing test adequately checks the intended behavior at the required test level |
+| **EXTEND** | A related test exists but needs another condition or assertion |
+| **CREATE** | The relevant search and review support a genuine coverage gap |
+| **REVIEW** | The requirement, test behavior or search scope is still uncertain |
+
+A test in an API suite and one in an E2E suite are not necessarily duplicates, even when they check a similar rule. They may protect different failure points.
+
+## QA workflow
 
 ```mermaid
 flowchart TD
-  A["Feature / modernization request"] --> B["Normalize requirements"]
-  B --> C["Identify impacted services & journeys"]
-  C --> D["Search service-level and shared E2E catalogs"]
-  D --> E["Inspect shortlisted source-backed evidence"]
-  E --> F{"Coverage quality?"}
-  F -->|"Adequate"| G["REUSE"]
-  F -->|"Partial"| H["EXTEND"]
-  F -->|"Verified gap"| I["CREATE"]
-  F -->|"Ambiguous / unavailable"| J["REVIEW"]
+    A["New feature or modernization"] --> B["Understand requirements"]
+    B --> C["Identify affected services and flows"]
+    C --> D["Search existing test catalogs"]
+    D --> E["Read relevant tests and assertions"]
+    E --> F{"Coverage assessment"}
+    F -->|"Covered"| G["REUSE"]
+    F -->|"Partly covered"| H["EXTEND"]
+    F -->|"Gap supported by review"| I["CREATE"]
+    F -->|"Unclear or incomplete"| J["REVIEW"]
 ```
 
-Rally metadata supports retrieval and triage; it never substitutes for evidence that the behavior is actually asserted.
+## Role of the Evaluator–Optimizer loop
 
-## Expected benefits
+The evaluator checks whether the proposed QA plan is supported by the requirements and existing tests. If something is missing, the workflow can refine the search, inspect another test or revise the proposed plan.
 
-Lower duplicated test creation, improved discovery across service and E2E repositories, more predictable context cost, clearer QA traceability, and explicit visibility into broken or inaccessible Rally mappings.
+The loop must have limits. Repeatedly asking a model to review the same information will not resolve a missing spec, inaccessible repository or unclear assertion. Those cases need human input.
+
+## What this approach should improve
+
+QA spends less time locating tests across repositories. Test plans can point to existing source and Rally references. The model receives a small set of relevant tests rather than the full catalog, while QA retains control over uncertain coverage decisions.
