@@ -1,107 +1,67 @@
-# QA Catalog Indexing Architecture
+# QA Test Catalog Intelligence — Solution Architecture
 
-**Status:** Proposed architecture (documentation only)  
-**Repository:** ghostlives/qa-catalog-indexing-architecture  
-**Scope:** Deterministic indexing of automation test cases from many independently owned repositories.  
-**Implementation:** None. No executable indexer, GitHub Actions workflow, MCP server, or production integration is included.
+> **Status:** Architecture proposal · **Audience:** QA architects, engineering leads, automation owners and platform teams · **Scope:** Problem, solution, architecture and trade-offs.
+> **No implementation code or deployment instructions are included.**
 
-## Problem statement
+## Executive summary
 
-An enterprise SDLC can contain dozens or hundreds of backend, frontend, and shared E2E automation repositories. Individual repositories may contain more than 1,000 test cases. New features and modernization work require QA teams to identify existing tests **before** authoring new ones. Requirement documents can originate from SpecKit or custom SDD processes.
+In a multi-repository SDLC, automation test cases are dispersed across service-level and shared E2E repositories. New feature or modernization work often creates redundant tests because existing coverage is difficult to discover and verify. The difficulty increases when different teams use different specification frameworks and when Rally Test Case references are stale or inconsistent.
 
-A monolithic test catalog provided to an LLM on every request is too expensive and unreliable. This design stores *structured, versioned test signals outside the LLM context*, then retrieves only relevant candidates for evidence-based coverage evaluation.
+**Proposed solution:** Establish a **Reuse-First QA Test Intelligence capability** that maintains a lightweight, searchable catalog of automation tests, enriches it with independently observed Rally information, and supports evidence-based decisions to **REUSE, EXTEND, CREATE, or REVIEW**—before any new test generation.
 
-## Architectural decisions
+The central architectural principle is:
 
-| Concern | Proposed choice | Why |
-| --- | --- | --- |
-| Indexing trigger | Push to the source repository's default main branch after merge | Automation and consistent provenance |
-| Indexing engine | Framework-native test discovery + AST/static extraction | No LLM cost during indexing |
-| Initial indexing mode | Deterministic full snapshot per repo | Correct handling of additions, updates, removals |
-| Catalog format | JSONL test records + JSON manifest | Portable, streamable, schema-versioned |
-| Rally traceability | Rally TC references in static records + independently refreshed enrichment overlay | Handles deleted/inaccessible TC links and historical results without source reindex |
-| Catalog storage | Separate **qa-catalog** branch in the same repository | Git history without generated commits on main |
-| Version identity | Exact source commit SHA | Makes freshness and auditability explicit |
-| Runtime access | GitHub CLI (gh) + GitHub API, not MCP | Fits local coding agents and enterprise workflows |
-| Runtime search | Local cache + lexical/metadata search initially | No large catalog sent to LLM |
-| Semantic verification | On-demand LLM over shortlisted source/evidence only | Reuse-first, controlled token use |
-| Multi-repo growth | Optional aggregated search index, not mandatory for PoC | Incremental adoption |
+**Catalog and search stay outside the LLM context. The LLM only evaluates shortlisted, source-backed evidence.**
 
-## Documentation map
+## Problem → Solution at a glance
 
-1. [Problem, scope and requirements](docs/01-requirements.md)
-2. [System architecture and data flow](docs/02-architecture.md)
-3. [GHA indexing pipeline and framework adapters](docs/03-indexing-pipeline.md)
-4. [Catalog data contract and test identity](docs/04-data-contract.md)
-5. [Branch storage, publication and consistency](docs/05-storage-publication.md)
-6. [Runtime retrieval via gh CLI](docs/06-retrieval-gh-cli.md)
-7. [Quality, security, performance and token controls](docs/07-quality-security-cost.md)
-8. [PoC roadmap and acceptance tests](docs/08-poc-rollout.md)
-9. [Failure modes and recovery](docs/09-failure-modes.md)
-10. [Open design questions](docs/10-open-questions.md)
-11. [Rally linkage, validity and last recorded result enrichment](docs/11-rally-enrichment.md)
+| Enterprise challenge | Architectural response |
+| --- | --- |
+| Backend, frontend and E2E tests distributed across many repositories | Federated, per-repository test catalog |
+| 1,000+ test cases in a single automation repo | Deterministic indexing and selective retrieval |
+| Existing tests difficult to identify for a new feature | Reuse-first discovery and evidence-based coverage evaluation |
+| SpecKit and custom SDD documents vary in structure | Framework-independent requirement normalization |
+| Rally links may be missing, deleted or inaccessible | Rally reference resolution with explicit uncertainty |
+| Rally last recorded result is not the current CI outcome | Distinct lifecycle and freshness for Rally observations |
+| Many test records would consume excessive model tokens | Search locally through `gh`-based access and send only top candidates to the model |
 
-### Architecture decision records
-- [ADR-0001: Deterministic indexing](docs/adr/0001-deterministic-indexing.md)
-- [ADR-0002: Catalog on separate branch](docs/adr/0002-catalog-branch.md)
-- [ADR-0003: gh CLI, not MCP](docs/adr/0003-gh-cli-access.md)
-- [ADR-0004: Reuse-first with lazy evidence](docs/adr/0004-reuse-first-retrieval.md)
-- [ADR-0005: Independent Rally enrichment and freshness](docs/adr/0005-rally-enrichment-decoupled.md)
-
-### Mock data (illustrative, non-executable)
-- [Snapshot manifest](mock-data/manifest.json)
-- [Test records](mock-data/tests.jsonl)
-- [Search results](mock-data/search-results.json)
-- [Coverage evaluation](mock-data/coverage-evaluation.json)
-- [Rally enrichment manifest](mock-data/rally-manifest.json)
-- [Rally enrichment records](mock-data/rally-enrichment.jsonl)
-
-## End-to-end operating model
+## Solution at a glance
 
 ```mermaid
 flowchart LR
-  subgraph SOURCE["Each automation repo"]
-    A["main: tests + fixtures"] --> B["GHA on main push"]
-    B --> C["Discovery + AST extraction"]
-    C --> D["Validated full snapshot"]
-    D --> E["qa-catalog branch"]
+  subgraph Sources["Enterprise inputs"]
+    A["Automation repos: service + shared E2E"]
+    S["Feature specs: SpecKit / custom SDD"]
+    R["Rally Test Cases and recorded results"]
   end
-  subgraph QUERY["QA agent runtime"]
-    F["Feature requirements"] --> G["Behavior/impact query"]
-    G --> H["gh-based catalog sync"]
-    E --> H
-    H --> I["Local cache + shortlist"]
-    I --> J["Lazy evidence inspection"]
-    J --> K["Coverage evaluator"]
-    K --> L["REUSE / EXTEND / NEW / REVIEW"]
-  end
+  A --> I["Per-repo catalog indexing"]
+  I --> C["Versioned test catalog"]
+  R --> E["Independent Rally enrichment"]
+  E --> C
+  S --> N["Requirement normalization"]
+  N --> Q["Reuse-first search + evaluation"]
+  C --> Q
+  Q --> O["QA decision: REUSE / EXTEND / CREATE / REVIEW"]
 ```
 
-## Rally enrichment (independent of main merges)
+## Read the proposal
 
-Every automation TC is expected to link to a Rally Test Case. The static index records that link, while a separate read-only Rally WSAPI refresh resolves existence and last **recorded** result into `rally-enrichment.jsonl` and `rally-manifest.json` on the catalog branch. Results are historical Rally observations, **not** current CI/runtime statuses. A missing Rally item might be deleted, inaccessible or moved; disappearance does not automatically invalidate automation tests. See [Rally enrichment design](docs/11-rally-enrichment.md).
+1. [Problem and desired outcomes](docs/01-problem-and-goals.md)
+2. [Proposed solution](docs/02-proposed-solution.md)
+3. [Reference architecture](docs/03-reference-architecture.md)
+4. [Architectural decisions and trade-offs](docs/04-decisions-and-tradeoffs.md)
+5. [Success criteria, scope and evolution](docs/05-success-criteria-and-roadmap.md)
 
-## Explicit non-goals
+## Key boundaries
 
-- No new production application or service.
-- No auto-generated test cases as part of indexing.
-- No production source code modification.
-- No automatic assertion of business coverage from test names, similarity scores, or static signals alone.
-- No database, vector store, embedding job, or MCP dependency for the first PoC.
-- No bypass of branch protection or repository access permissions.
+- **Source code** defines the automation test implementation. The catalog is derived metadata, not a second source of truth.
+- **Rally** is an independent test-management system; a missing Rally TC does not automatically invalidate an automation test.
+- **Rally's last recorded result** is historical metadata, not the current runtime automation status.
+- **Search relevance** does not prove coverage. A coverage decision needs relevant assertions, setup and/or execution evidence.
+- **No result found** does not mean no test exists, especially when repository scope or indexing completeness is uncertain.
 
-## Guiding principles
+## Proposed operating model
 
-1. **Catalog is data, not prompt context.** Large snapshots are never passed to an LLM.
-2. **Discovery is not coverage.** Indexer records observed tests and evidence; QA evaluator establishes coverage separately.
-3. **Fail closed on uncertainty.** Incomplete discovery or missing repository access means UNKNOWN, never confidently MISSING.
-4. **Provenance is mandatory.** Each record points to a repo, commit, file, and test identity.
-5. **Publication is monotonic.** A snapshot from an older main commit must not replace a newer snapshot.
-6. **One logical test may have many execution variants.** Parameterized cases, browser projects, and environments are modeled separately.
-7. **Indexing is recoverable.** Keep the previous valid snapshot when CI fails.
+Automation repositories produce versioned catalogs when their main branches change, using an existing CI capability such as GitHub Actions. Rally information is refreshed independently because its Test Cases and recorded results can change without code merges. A QA agent accesses selected catalogs through a small **GitHub CLI–based retrieval capability**, without needing MCP or checkout of every catalog branch. Detailed test evidence is inspected only as needed.
 
-## Intended outcome
-
-A QA agent can search historical automation tests across repositories without cloning every catalog branch, loading every test into context, or creating duplicate tests by default. A shortlist is verified with source-level evidence, then routed to REUSE, EXTEND, NEW, or REVIEW.
-
-**This repository is a design baseline, not a claim that a working indexer or search tool exists.**
+This repository intentionally describes the **what and why**, not the **how-to-build**. Detailed schemas, workflow definitions, framework-specific parsers, command examples and mock implementation data are deferred to a future engineering design.
