@@ -1,73 +1,69 @@
-# QA Test Catalog — Solution Architecture
+# QA Test Catalog — A Method for Reusing Existing Automation Tests
 
-**Status:** Proposed — principal architecture review completed; implementation gates remain open
+## The problem
 
-**Scope:** Problem, proposed solution, system architecture and key decisions
+Automation tests are spread across backend, frontend and shared end-to-end (E2E) repositories. Some repositories contain more than 1,000 test cases (TCs). When a feature changes, QA must work out which existing tests cover the affected behavior before writing more tests.
 
-**Audience:** QA leads, automation engineers, software architects and DevOps teams
+That is difficult when tests belong to different teams, test names do not describe the full flow, and requirements come from different document formats. Every automated TC also links to Rally, but a Rally record might be unavailable or its last recorded result might be old.
 
-## Overview
+The problem is **finding and verifying existing coverage**, not generating tests faster.
 
-Our automation tests are spread across backend, frontend and shared end-to-end (E2E) repositories. A single repository may contain more than 1,000 test cases (TCs). When a team delivers a new feature or modernizes an existing one, QA has to find relevant tests across these repositories before deciding what to add or change.
+## The method
 
-Today, that search takes time and is difficult to reproduce. Test names do not always describe the behavior they check, and shared E2E tests may cover several services without naming them. Feature specifications also vary between SpecKit and custom software design documents (SDD). Every automated TC is linked to Rally, but the Rally record may be unavailable or its last recorded result may be outdated.
+Maintain a searchable catalog for each automation repository and use it to check existing tests before deciding whether to create new ones.
 
-The goal is to make existing tests easier to find and assess **without passing entire test repositories or catalogs to an LLM**.
-
-## Proposed approach
-
-Maintain a small, searchable catalog for each automation repository. Indexing collects test identities, locations and other useful information from source code without using an LLM. The catalog is updated when the repository changes.
-
-A separate process checks the linked Rally TCs and retrieves their latest recorded results. Rally data is refreshed independently because a TC or its result can change without any source-code change.
-
-When QA reviews a feature, the workflow:
-
-1. Reads the requirements, regardless of the original spec format.
-2. Identifies affected services and business flows.
-3. Resolves and records the relevant service and shared E2E repositories.
-4. Checks source-level evidence for the most relevant existing tests.
-5. Recommends **REUSE**, **EXTEND**, **CREATE** or **REVIEW**, with reasons.
-
-The agent can access catalogs through GitHub CLI (`gh`) and search them locally. It does not need to check out the catalog branch or use an MCP server. Only a short list of candidate tests and the source details needed for review are passed to the LLM.
-
-The design also requires a small **repository registry**. It maps services and business flows to the automation and shared E2E repositories that must be searched. Without that registry, a correct local search can still miss relevant tests because it searched the wrong repositories.
-
-## Architecture at a glance
+The method combines two ongoing activities—**catalog maintenance** and **Rally data refresh**—with a QA review that runs for each feature.
 
 ```mermaid
 flowchart LR
     A["Automation repositories"] --> B["Test catalog indexing"]
-    B --> P["Validated publication"]
-    R["Rally Test Cases"] --> E["Rally data refresh"]
-    E --> P
-    P --> C["Versioned catalogs"]
-    S["Feature specs"] --> N["Requirement analysis"]
-    G["Repository / flow registry"] --> Q["Find existing tests"]
-    N --> Q
-    C --> Q
-    Q --> V["Check coverage"]
-    V --> D["Evidence record"]
-    D --> O["Reuse / Extend / Create / Review"]
+    B --> C["Versioned catalogs"]
+    R["Rally"] --> D["Rally record lookup"]
+    D --> E["Rally observations"]
+    S["Feature requirements"] --> F["Understand expected behavior"]
+    G["Service / flow repository map"] --> H["Find relevant tests"]
+    F --> H
+    C --> H
+    E --> H
+    H --> I["Check test evidence"]
+    I --> J["Reuse / Extend / Create / Review"]
 ```
 
-## Design documents
+**The catalog is searched outside the LLM.** The model receives only relevant test candidates and the source evidence needed to assess them. Routine indexing and initial search do not need model calls.
 
-| Document | What it covers |
+## How a feature is reviewed
+
+1. Identify the behavior, conditions and expected results from the specification.
+2. Determine which service, frontend and shared E2E repositories may contain relevant tests.
+3. Search their catalogs and inspect the most relevant existing tests.
+4. Check actual setup, assertions and test purpose against the requirements.
+5. Recommend **REUSE**, **EXTEND**, **CREATE** or **REVIEW** and record the supporting evidence.
+
+A missing search result is not proof that a test does not exist. The decision also depends on repository coverage, catalog freshness and access to the source code.
+
+## Where Rally fits
+
+Rally helps link automation tests to managed TCs and shows their last recorded results. This is useful for traceability, but it must be interpreted carefully:
+
+- A linked TC that cannot be found might be deleted, moved or inaccessible.
+- A recorded Pass or Fail in Rally is **not the outcome of the current CI run**.
+- The Rally lookup time and the recorded result time are different.
+- Neither Rally status nor test-name similarity proves requirement coverage.
+
+## Architecture choices
+
+The catalogs remain with their automation repositories, stored on a separate `qa-catalog` branch rather than committed to `main`. GitHub Actions can update a catalog when source reaches `main`; Rally observations refresh separately because Rally changes independently of code.
+
+An agent uses GitHub CLI (`gh`) and a local search capability to read catalogs without checking out each catalog branch or running an MCP server. The design keeps repository access controls and Rally visibility separate.
+
+## Documents
+
+| Document | Purpose |
 | --- | --- |
-| [01 — Problem and goals](docs/01-problem-and-goals.md) | Current QA issues and expected improvements |
-| [02 — Proposed solution](docs/02-proposed-solution.md) | How catalog indexing, Rally and QA review work together |
-| [03 — System architecture](docs/03-reference-architecture.md) | Main components, data flows and system boundaries |
-| [04 — Design decisions](docs/04-decisions-and-tradeoffs.md) | Alternatives, trade-offs and unresolved constraints |
-| [05 — Validation and next steps](docs/05-success-criteria-and-roadmap.md) | How to test the approach before broader adoption |
-| [06 — Architecture review](docs/06-architecture-review.md) | Principal-review findings, dispositions and implementation gates |
+| [01 — Problem and goals](docs/01-problem-and-goals.md) | What makes existing-test discovery difficult and what the method must solve |
+| [02 — Resolution method](docs/02-resolution-method.md) | How catalog maintenance and per-feature QA review work |
+| [03 — Architecture](docs/03-reference-architecture.md) | Components, information flow and trust boundaries |
+| [04 — Design choices](docs/04-decisions-and-tradeoffs.md) | Reasons for the main choices and their limits |
+| [05 — Quality and validation](docs/05-quality-and-validation.md) | How to judge whether the method works |
 
-## Important distinctions
-
-- A catalog entry shows that an automation test exists. It does **not** prove that the test covers a particular requirement.
-- A missing Rally TC may have been deleted, moved or hidden by access restrictions. The automation test should not be removed based on a failed lookup.
-- The last test result stored in Rally is historical information, **not the result of the current CI run**.
-- If search finds no matching test, QA still needs to consider search scope and catalog completeness before deciding to create one.
-- Every recommendation must record the requirement version, repositories searched, catalog revisions, Rally observation time and source evidence. This makes the result reviewable and reproducible.
-- Indexing and requirement ingestion treat repository and document content as untrusted input. Dynamic test discovery must not run with production credentials or unrestricted network access.
-
-This repository describes the solution, not its implementation. It contains no workflow YAML, executable tools, physical schemas or mock API responses. It does define the minimum logical contracts and operating safeguards needed before implementation.
+This repository describes the method and system architecture. It does not define implementation code, CLI commands, CI workflow files or API schemas.

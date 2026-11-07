@@ -1,98 +1,60 @@
-# 04 — Design Decisions and Trade-offs
+# 04 — Design Choices and Trade-offs
 
-The following choices are recommended for an initial solution. They should be checked against existing repository policies, test frameworks and Rally access before implementation.
+The method uses existing source repositories and GitHub tooling to make test discovery easier. The choices below describe the system's operating approach and the limitations QA must account for.
 
-## Decision summary
+| Choice | Reason | Limitation |
+| --- | --- | --- |
+| Build catalogs from framework discovery and source analysis | Handles large test suites without an LLM reading every test | Some behaviors are hidden in helpers, fixtures or dynamic test setup |
+| Keep a catalog with each automation repository | Test ownership and source references stay together | Searching a feature may involve several repositories |
+| Publish catalogs to a separate `qa-catalog` branch | Generated data stays out of the `main` change history | Publication must prevent stale or conflicting updates |
+| Use a maintained service/flow repository map | Search scope is explicit and can be reviewed | The map needs ownership and regular maintenance |
+| Read catalog files through `gh` | Local agents can access the files without checkout or MCP | A separate local search capability is still needed |
+| Refresh Rally records separately | Rally can change even when source code has not | Recorded results can be old or restricted by permissions |
+| Search before asking a model to evaluate tests | Controls token use and focuses the review | Initial search can miss tests with indirect dependencies |
+| Make QA decisions from actual test evidence | Avoids confusing similar names with equivalent coverage | Some cases still need human judgment |
 
-| ID | Status | Decision | Why | Limitation |
-| --- | --- | --- | --- | --- |
-| D1 | Accepted for pilot | Index test metadata without an LLM | Avoids model cost for thousands of tests | Static analysis cannot explain every test behavior |
-| D2 | Accepted for pilot | Keep a catalog per automation repo | Teams keep ownership of their tests | Queries need a registry to find several repos |
-| D3 | Provisional | Store catalogs on `qa-catalog` branches | Generated changes stay out of `main` | Security, retention and publication checks must pass |
-| D4 | Accepted for pilot | Read catalogs through `gh` | Works with local coding agents without MCP | Clients need authentication, caching and search |
-| D5 | Accepted with gate | Refresh Rally separately | Rally records and results change without code merges | Data cannot be persisted until audiences are proven compatible |
-| D6 | Accepted | Search before creating tests | Reduces unnecessary test creation | Search results still need source-level coverage review |
-| D7 | Accepted for pilot | Start with local search | No new central infrastructure for a pilot | Cross-repo search may become slower at scale |
-| D8 | Accepted | Use an owned repository/flow registry | Makes search scope explicit and reproducible | Registry maintenance becomes an operational responsibility |
-| D9 | Accepted | Publish immutable snapshots through one logical publisher | Prevents mixed or regressed catalog state | Adds a manifest and retention lifecycle |
-| D10 | Accepted | Fail closed to REVIEW on incomplete evidence | Avoids false confident CREATE/REUSE decisions | More cases require human review |
+## Catalog storage
 
-## Catalog storage: main, separate branch or external storage?
+Committing generated catalog data into `main` adds changes that are not part of the automation source and can conflict with normal review rules.
 
-Committing the catalog to `main` would keep source and generated data together, but every update would add another commit or PR change. It could also conflict with branch protection rules.
+A separate `qa-catalog` branch avoids that problem while retaining Git-based provenance. The catalog references the source commit, so a late indexing run cannot be treated as current merely because it published last.
 
-A separate `qa-catalog` branch keeps the source history clean and lets Git track catalog versions. The catalog must identify the source revision it describes. Publishing an older snapshot after a newer merge must not make that older snapshot appear current.
+The trade-off is maintaining the generated branch and ensuring that source updates and Rally refreshes do not overwrite each other. This requires controlled publication and sensible retention of generated data.
 
-External storage could simplify search across many repositories, but adds infrastructure and permissions to manage. There is no clear need for it before a pilot measures local search performance.
+External storage is possible, but the selected method does not depend on deploying a separate data service.
 
-**Recommendation:** start with a separate catalog branch only after branch permissions, serialized publication and retention are proven. Store immutable snapshots and advance a validated manifest; do not let independent jobs overwrite shared mutable files. Reconsider storage if size, update frequency or access segmentation becomes difficult to manage.
+## GitHub CLI and search
 
-## Catalog access: GitHub CLI or a service?
+GitHub CLI handles authenticated access to catalog files on the relevant branch. The agent does not need to clone each repository's catalog branch.
 
-A coding agent already able to run terminal tools can use `gh` to read catalog content at a specific branch. A local search utility can filter it before returning candidates to the model.
+Local search still needs to filter, rank and cache records. It should also report which repositories were searched and which could not be accessed. GitHub CLI alone does not provide a complete cross-repository test search engine.
 
-This avoids deploying an MCP server or requiring catalog branches to be checked out. However, `gh` only retrieves data; it is not a search engine. Good filtering, caching and candidate ranking still need to be provided outside the LLM.
+A central search index is not part of this method. It would only be justified if local catalog access no longer meets the expected coverage, latency or permission requirements.
 
-**Recommendation:** use `gh` for access in the first version. Consider a shared search service only when multiple users or many repositories make local search impractical.
+## Rally information
 
-Local clients pin a manifest revision, verify checksums and cache by immutable identity. This avoids combining files from two updates and makes a recommendation reproducible.
+The Rally reference identifies the managed TC associated with automation code. A lookup can establish whether that record is accessible and retrieve a recorded result under an agreed project and result-selection scope.
 
-## Indexing: source signals or AI-generated descriptions?
+Not finding a Rally record does not prove deletion. Likewise, a Rally Pass or Fail does not establish the status of the current automation run.
 
-An LLM could summarize every test, but doing this after each merge would create recurring cost. The summaries could also claim behavior that the code does not actually verify.
+Rally information must have its own refresh date. Access is also a design constraint: if GitHub repository readers do not have permission to see the Rally fields, those fields cannot be published to that branch.
 
-Framework discovery and source analysis offer a more predictable starting point. They can collect names, tags, file locations and some assertion or API signals without model calls. Framework adapters must report their supported versions and unsupported constructs.
+## Search quality and the role of the model
 
-The trade-off is search quality. A shared E2E test may be relevant even if none of those fields name the changed service. Source inspection and wider repository search remain necessary.
+Deterministic metadata search is inexpensive and easy to inspect, but it may not find an E2E test whose name does not mention the changed service. The service/flow map, related repository search and source inspection reduce this risk; they cannot eliminate it entirely.
 
-**Recommendation:** begin with source-derived information and measure how often it misses tests known to QA. Add more advanced search only if the results justify it.
+An LLM is useful for interpreting requirements and comparing them with shortlisted test code. It should not be asked to read a complete catalog, treat source comments as instructions or conclude that no test exists after one unsuccessful query.
 
-Static parsing is preferred. Framework discovery that imports or executes tests is permitted only in a disposable, read-only sandbox without production secrets or unrestricted network access.
+Evaluator–Optimizer can repeat the search or request more evidence, but every iteration has a cost. It stops when the result is clear, new evidence is no longer found, or human review is required.
 
-## Rally: one catalog or separate update cycles?
+## Evidence and approval
 
-Linking Rally information to a test catalog is useful, but source code and Rally records do not change at the same time. A test result might be recorded in Rally days after the last source merge.
+Each decision should be understandable to another engineer. It records the requirements, search scope, catalog commit, inspected tests and the reason for REUSE, EXTEND, CREATE or REVIEW.
 
-A separate Rally refresh lets the system update that information without rescanning the tests. The catalog must preserve the distinction between a source revision, the time Rally was checked, and the result's actual recorded date.
+A matching test title alone is insufficient for REUSE. A missing search result alone is insufficient for CREATE. QA retains responsibility for uncertain or high-risk decisions.
 
-The phrase “latest result” is ambiguous unless the organization specifies which result relationship, workspace/project, environment or execution type, ordering timestamp and tie-break rule apply. Selecting the newest API row without those semantics can show the wrong status.
+## Operational boundaries
 
-An unavailable Rally TC should be flagged for review, not marked deleted without evidence. A stored Pass or Fail should not be presented as the status of the latest CI run.
+The method must respect branch protection, runner availability and repository permissions. Framework discovery that executes code needs an isolated environment. Rally metadata must follow Rally access rules. Catalogs must expose failed or incomplete indexing rather than implying that every test is known.
 
-**Recommendation:** keep Rally observations separate from source-indexed test information, even if the initial storage is in the same branch. Review data access before publishing Rally fields to GitHub. If the Rally audience is narrower than repository readership, keep observations in an access-controlled store or fetch them during review.
-
-## When can QA reuse or create a test?
-
-A test title or search score can point QA to a candidate; it cannot confirm coverage. A useful decision needs the scenario, expected outcome, existing test setup and assertions. The required test level also matters: API integration coverage does not always replace E2E coverage.
-
-**Recommendation:** use the Evaluator–Optimizer pattern to review and refine these decisions. When search scope, source evidence or requirements are incomplete, return REVIEW rather than making a confident CREATE or REUSE recommendation.
-
-## Repository scope: inference or registry?
-
-Inferring repository scope from a requirement on every request is flexible but non-deterministic. A maintained registry makes the default scope reviewable and enables ownership and completeness checks. It does not eliminate QA judgment; manual scope changes are recorded in the evidence.
-
-**Recommendation:** require a versioned repository/flow registry for the pilot. Assign an owner and freshness review. Do not accept no-match conclusions for domains not covered by the registry.
-
-## Catalog identity and updates
-
-Mutable files on a shared branch allow late jobs and independent source/Rally writers to produce inconsistent combinations. Test names are also insufficient as durable identities because they can repeat, be parameterized or change.
-
-**Recommendation:** identify a source snapshot by repository plus source commit; identify tests exactly within that snapshot using framework node identity and source location. Publish immutable content, then atomically advance a manifest through one logical publisher. Treat rename correlation across snapshots as best-effort.
-
-## Security and trust
-
-Repository code, test metadata and specifications are untrusted input. Test discovery may execute imports, and retrieved text may contain instructions aimed at the QA agent. Rally data can also have a narrower audience than GitHub source.
-
-**Recommendation:** isolate executable discovery, strip write credentials from analysis jobs, restrict egress, apply size limits, keep content in a data-only boundary and log access without leaking source or Rally details. Complete threat modeling and data-classification review before the pilot handles production repositories.
-
-## Implementation gates to resolve
-
-1. Name the owner and review process for the repository/flow registry.
-2. Approve the Rally-to-GitHub data classification, audience mapping and latest-result selection rule.
-3. Select supported frameworks and prove safe discovery for each one.
-4. Approve source and Rally freshness objectives, retention and branch-size limits.
-5. Confirm an available CI runner and least-privilege publishing identity in pilot repositories.
-6. Define the human approval policy for REUSE, EXTEND, CREATE and REVIEW outputs.
-7. Approve the benchmark set and pilot exit thresholds.
-
-GitHub Actions runners may not be available in every enterprise repository. The indexing approach must therefore remain usable with another approved CI system. No decision here depends on a particular LLM provider, database or programming language.
+These safeguards are part of the method, not separate implementation options.

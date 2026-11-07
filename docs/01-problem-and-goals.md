@@ -1,111 +1,74 @@
 # 01 — Problem and Goals
 
-## Current environment
+## Context
 
-The application landscape includes many backend microservices and frontend applications. Different teams own different parts of the system, but their changes often affect the same business flows.
+The application has many services and user interfaces maintained by different teams. Tests are spread across service-specific automation repositories and shared E2E repositories. A service change can affect a test in another repository, especially when the test covers an end-to-end business flow.
 
-Automation tests are organized in several ways:
+Repositories may contain more than 1,000 TCs each. Automated tests are linked to Rally TCs. Requirements come from SpecKit, custom software design documents (SDD) and other sources.
 
-- A service may have its own test repository.
-- Some repositories contain more than 1,000 TCs.
-- Shared E2E repositories test flows involving multiple services and UIs.
-- Automated TCs are linked to Rally Test Cases.
-- Feature requirements can come from SpecKit, custom SDD templates or other documents.
+QA needs a reliable answer to a practical question:
 
-A change in one service can therefore affect tests in several repositories. Finding those tests is one of the most time-consuming parts of QA planning.
+**Which existing tests should be reused or extended for this change, and which behavior still needs a test?**
 
-## Problems to solve
+## Where the current process breaks down
 
-### 1. Existing tests are hard to find
+### Tests are distributed
 
-Test names, folders and tags do not always describe what a test verifies. A shared E2E test might exercise Order, Payment and Notification services through a single user journey.
+Test names, tags and folder structures do not consistently identify business behavior. An E2E test can cross several services without listing them explicitly. Searching only the repository owned by the team making the change can miss relevant coverage.
 
-**Example:** A change to order cancellation may already be covered by an E2E test named `CustomerCheckoutFlow`. Searching only the Order automation repository—or only for "cancel"—could miss it.
+### Existing coverage is difficult to verify
 
-### 2. New test plans can duplicate existing coverage
+Finding a test with a similar name is not enough. The test might use a different setup, assert only part of the requirement or mock a dependency that the new feature needs to exercise.
 
-A model may generate a reasonable test scenario without knowing that the same behavior is already checked elsewhere. Adding another test is not always useful. It can increase execution time and maintenance work without improving coverage.
+The reverse is also true: a test with an unrelated title may already verify the required behavior.
 
-The opposite mistake also matters: a similar test name is not enough to conclude that the required behavior is covered.
+### Requirements are not written in one format
 
-### 3. Requirements arrive in different formats
+SpecKit and custom SDD documents describe rules and acceptance criteria differently. QA must extract conditions and expected outcomes without losing business meaning or relying on a particular file structure.
 
-SpecKit and custom SDD workflows describe requirements differently. Some documents include detailed acceptance criteria; others focus on system behavior or design changes.
+### Rally data can be misunderstood
 
-QA needs to identify the expected behavior, conditions and outcomes without assuming that every team uses the same template.
+A linked Rally TC might no longer be visible. That does not establish that the record was deleted. For accessible records, Rally may hold a last recorded result that came from an earlier manual or automated run.
 
-### 4. Large catalogs do not belong in the model context
+Rally is useful for traceability; it cannot replace source-level checks or current CI execution evidence.
 
-Sending thousands of TC descriptions and source files to an LLM for each feature would consume unnecessary tokens. It would also make it harder to focus on the few tests that matter.
+### Full-catalog prompting does not scale
 
-Search should narrow the candidates before the model reads test details.
+Passing thousands of TC records to an LLM for every feature increases token use and still leaves the model to search an oversized context. Routine discovery is better handled by an index and ordinary search tools.
 
-### 5. Rally links and results can be misleading
+### Search results depend on the repositories included
 
-A test may still exist in source code even when its linked Rally TC cannot be found. A failed lookup does not tell us whether the TC was deleted or the user lacks access.
+A good search over the wrong repositories is still incomplete. QA needs an explicit, maintainable mapping of services and business flows to automation repositories, including shared E2E suites.
 
-For an existing Rally TC, the latest recorded result may be useful context, but it may come from an earlier manual or automated execution. It cannot be treated as the status of the current CI run.
+## Example: cancellation of shipped orders
 
-### 6. Search scope is not currently deterministic
+Suppose a feature changes the behavior when a shipped order is cancelled. QA needs to verify that:
 
-Knowing that a feature changes the Order service does not by itself identify every repository that may contain relevant tests. Shared E2E suites, frontend suites and upstream or downstream services may also cover the flow. Relying on an agent to guess this set makes search results difficult to reproduce and creates false coverage gaps.
+- The cancellation request is rejected.
+- The order remains in its previous state.
+- No refund is initiated.
+- The relevant customer journey still behaves correctly.
 
-The solution needs an owned registry that maps services and business flows to repositories, test levels and responsible teams. The registry is a search-scope control, not a central test catalog.
+One integration test might check the response, another might verify the saved state, and a shared E2E test might check the journey. These tests have different purposes; they should not be considered duplicates simply because they cover the same feature.
 
-### 7. Generated catalog data can become inconsistent
-
-Source indexing and Rally refresh happen on different schedules. If both processes update the same branch without a publication contract, a late job can overwrite newer data or combine a source snapshot with Rally observations from a different test identity set.
-
-Catalog publication needs immutable source snapshots, explicit timestamps and revisions, and a serialized or optimistic-concurrency-safe way to advance the current manifest.
-
-### 8. Discovery and model input introduce security boundaries
-
-Some framework discovery commands import or execute test modules. Running them against untrusted changes with network access or secrets can execute repository code in the indexing environment. Specifications, test names and source comments can also contain instructions that must be treated as data rather than trusted agent commands.
-
-The indexing environment and the QA agent therefore need least-privilege access, content limits, auditability and clear separation between retrieved evidence and executable instructions.
-
-## Example: order cancellation change
-
-Suppose a feature changes the behavior for cancelling shipped orders. QA must check whether existing tests cover:
-
-- The cancellation request being rejected.
-- The order state remaining unchanged.
-- No refund being issued.
-- The behavior through the customer-facing E2E flow, where applicable.
-
-One service-level test may verify the HTTP response, another may check the order state, and a shared E2E test may cover the customer journey. QA should inspect these tests before deciding whether to extend an existing test or create a new one.
-
-Rally may help find the linked TCs and their prior results. It does not replace inspection of actual assertions and setup.
+The useful outcome is a QA plan that identifies those existing tests, explains what they cover, and calls out any remaining gap.
 
 ## Goals
 
-| Goal | What success looks like |
+| Goal | Expected outcome |
 | --- | --- |
-| Find existing tests | QA can locate relevant service and shared E2E tests across repositories |
-| Reduce duplicate tests | New TCs are proposed only after existing coverage has been reviewed |
-| Support different spec formats | QA can work from the behavior described in SpecKit or custom SDD documents |
-| Control model usage | Catalog creation and initial search do not require LLM calls |
-| Improve Rally visibility | Missing links and last recorded results are shown with clear status and dates |
-| Explain decisions | A recommendation references the requirements, tests and information used |
-| Make searches reproducible | QA can see the repository scope, query, catalog revisions and evidence behind a recommendation |
-| Operate safely | Indexing does not expose secrets or grant repository content unnecessary network or write access |
-| Detect incomplete evidence | Stale, failed, partial or unsupported discovery is visible and prevents an unsupported confident decision |
+| Find existing tests | Search across relevant service, frontend and E2E repositories |
+| Reuse where appropriate | Avoid additional tests when existing ones provide the required coverage |
+| Identify genuine gaps | Compare expected behavior with actual setup and assertions |
+| Support different specifications | Interpret requirements consistently while retaining references to their sources |
+| Keep model cost controlled | Index and shortlist tests without using an LLM |
+| Use Rally correctly | Show link status and recorded results without treating them as live execution state |
+| Make decisions reviewable | Record which requirements, repositories, tests and evidence led to the QA recommendation |
 
-## Quality attributes
+## Boundaries
 
-| Attribute | Required behavior |
-| --- | --- |
-| Correctness | A catalog entry is traceable to a repository, immutable commit and framework test identity |
-| Completeness | Every framework-discovered test is catalogued or reported with an exclusion reason |
-| Freshness | Source and Rally ages are measured independently and compared with approved targets |
-| Security | Repository and Rally permissions are preserved; secrets and sensitive Rally fields are not copied into a broader audience |
-| Reliability | Indexing and refresh are idempotent, retryable and cannot silently replace a newer snapshot with an older one |
-| Explainability | Search ranking and QA recommendations include human-readable evidence and uncertainty |
-| Portability | Framework-specific extraction is isolated behind adapters; the architecture does not require one CI or LLM vendor |
-| Cost control | Deterministic discovery and search happen before bounded model analysis |
+The method does not replace Rally, move test code between repositories, require teams to adopt one test framework, or make test creation fully autonomous.
 
-## Outside the scope
+It also does not treat a failed lookup as a deleted Rally TC, a Pass in Rally as a current test pass, or an empty search as proof that no existing test covers a requirement.
 
-The solution does not replace Rally, change the automation frameworks, or mandate a new TC naming convention. It also does not define CI workflow syntax, indexing code, Rally API requests, current test execution reporting or a complete test-management system.
-
-Test coverage decisions remain subject to QA review, especially for unclear requirements, complex E2E flows or incomplete search results.
+Unclear requirements, missing repository access and incomplete test evidence require QA review rather than a confident coverage decision.
