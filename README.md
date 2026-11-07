@@ -1,6 +1,6 @@
 # QA Test Catalog — Solution Architecture
 
-**Status:** Proposed
+**Status:** Proposed — principal architecture review completed; implementation gates remain open
 
 **Scope:** Problem, proposed solution, system architecture and key decisions
 
@@ -24,25 +24,30 @@ When QA reviews a feature, the workflow:
 
 1. Reads the requirements, regardless of the original spec format.
 2. Identifies affected services and business flows.
-3. Searches the relevant service and shared E2E catalogs.
+3. Resolves and records the relevant service and shared E2E repositories.
 4. Checks source-level evidence for the most relevant existing tests.
 5. Recommends **REUSE**, **EXTEND**, **CREATE** or **REVIEW**, with reasons.
 
 The agent can access catalogs through GitHub CLI (`gh`) and search them locally. It does not need to check out the catalog branch or use an MCP server. Only a short list of candidate tests and the source details needed for review are passed to the LLM.
+
+The design also requires a small **repository registry**. It maps services and business flows to the automation and shared E2E repositories that must be searched. Without that registry, a correct local search can still miss relevant tests because it searched the wrong repositories.
 
 ## Architecture at a glance
 
 ```mermaid
 flowchart LR
     A["Automation repositories"] --> B["Test catalog indexing"]
-    B --> C["Versioned catalogs"]
+    B --> P["Validated publication"]
     R["Rally Test Cases"] --> E["Rally data refresh"]
-    E --> C
+    E --> P
+    P --> C["Versioned catalogs"]
     S["Feature specs"] --> N["Requirement analysis"]
-    N --> Q["Find existing tests"]
+    G["Repository / flow registry"] --> Q["Find existing tests"]
+    N --> Q
     C --> Q
     Q --> V["Check coverage"]
-    V --> O["Reuse / Extend / Create / Review"]
+    V --> D["Evidence record"]
+    D --> O["Reuse / Extend / Create / Review"]
 ```
 
 ## Design documents
@@ -54,6 +59,7 @@ flowchart LR
 | [03 — System architecture](docs/03-reference-architecture.md) | Main components, data flows and system boundaries |
 | [04 — Design decisions](docs/04-decisions-and-tradeoffs.md) | Alternatives, trade-offs and unresolved constraints |
 | [05 — Validation and next steps](docs/05-success-criteria-and-roadmap.md) | How to test the approach before broader adoption |
+| [06 — Architecture review](docs/06-architecture-review.md) | Principal-review findings, dispositions and implementation gates |
 
 ## Important distinctions
 
@@ -61,5 +67,7 @@ flowchart LR
 - A missing Rally TC may have been deleted, moved or hidden by access restrictions. The automation test should not be removed based on a failed lookup.
 - The last test result stored in Rally is historical information, **not the result of the current CI run**.
 - If search finds no matching test, QA still needs to consider search scope and catalog completeness before deciding to create one.
+- Every recommendation must record the requirement version, repositories searched, catalog revisions, Rally observation time and source evidence. This makes the result reviewable and reproducible.
+- Indexing and requirement ingestion treat repository and document content as untrusted input. Dynamic test discovery must not run with production credentials or unrestricted network access.
 
-This repository describes the solution, not its implementation. It contains no workflow YAML, executable tools, detailed schemas or mock API responses.
+This repository describes the solution, not its implementation. It contains no workflow YAML, executable tools, physical schemas or mock API responses. It does define the minimum logical contracts and operating safeguards needed before implementation.
