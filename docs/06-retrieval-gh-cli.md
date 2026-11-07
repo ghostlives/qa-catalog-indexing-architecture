@@ -56,6 +56,10 @@ No command implementation is included. A future CLI can expose commands with the
 
 Repository scope must be chosen from feature ownership, code-impact signals, service dependencies, and relevant shared E2E repositories. An empty initial result should expand to related repositories before declaring coverage absent.
 
+## Rally metadata lookup
+
+The gh-based reader may retrieve `rally-manifest.json` and `rally-enrichment.jsonl` and perform a deterministic local join to the current `tests.jsonl` using canonical Rally references. Verify that source catalog revisions match and freshness is acceptable. Search can filter by Rally TC ID, link-resolution state or historical result. Display Rally LastVerdict/LastResult only as **last recorded Rally outcome with date/source**, never as current CI/runtime automation result. A missing/inaccessible Rally TC must not cause the search utility to exclude the automation test or infer that no existing test is available. See [Rally enrichment](11-rally-enrichment.md).
+
 ## Retrieval stages and safeguards
 
 | Stage | Method | LLM context |

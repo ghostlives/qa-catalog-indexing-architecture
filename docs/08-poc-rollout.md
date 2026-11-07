@@ -63,6 +63,10 @@ Deliver:
 
 Exit: measured improvement over manual/full-context baseline and explicit human acceptance criteria.
 
+## Phase 5 — Rally traceability enrichment
+
+Deliver: source-extracted Rally references, canonical identity mapping, read-only Rally WSAPI resolution, last recorded result with provenance and independent refresh manifest. Validate success, missing/unconfirmed, permission-denied, deleted-confirmed, no-result, stale result and concurrent publication cases. Exit: a Rally result update is visible without a main merge, and the result is never presented as live CI status. See [Rally enrichment acceptance tests](11-rally-enrichment.md).
+
 ## Acceptance test matrix
 
 | ID | Scenario | Expected outcome |

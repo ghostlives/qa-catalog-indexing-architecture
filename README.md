@@ -19,6 +19,7 @@ A monolithic test catalog provided to an LLM on every request is too expensive a
 | Indexing engine | Framework-native test discovery + AST/static extraction | No LLM cost during indexing |
 | Initial indexing mode | Deterministic full snapshot per repo | Correct handling of additions, updates, removals |
 | Catalog format | JSONL test records + JSON manifest | Portable, streamable, schema-versioned |
+| Rally traceability | Rally TC references in static records + independently refreshed enrichment overlay | Handles deleted/inaccessible TC links and historical results without source reindex |
 | Catalog storage | Separate **qa-catalog** branch in the same repository | Git history without generated commits on main |
 | Version identity | Exact source commit SHA | Makes freshness and auditability explicit |
 | Runtime access | GitHub CLI (gh) + GitHub API, not MCP | Fits local coding agents and enterprise workflows |
@@ -38,18 +39,22 @@ A monolithic test catalog provided to an LLM on every request is too expensive a
 8. [PoC roadmap and acceptance tests](docs/08-poc-rollout.md)
 9. [Failure modes and recovery](docs/09-failure-modes.md)
 10. [Open design questions](docs/10-open-questions.md)
+11. [Rally linkage, validity and last recorded result enrichment](docs/11-rally-enrichment.md)
 
 ### Architecture decision records
 - [ADR-0001: Deterministic indexing](docs/adr/0001-deterministic-indexing.md)
 - [ADR-0002: Catalog on separate branch](docs/adr/0002-catalog-branch.md)
 - [ADR-0003: gh CLI, not MCP](docs/adr/0003-gh-cli-access.md)
 - [ADR-0004: Reuse-first with lazy evidence](docs/adr/0004-reuse-first-retrieval.md)
+- [ADR-0005: Independent Rally enrichment and freshness](docs/adr/0005-rally-enrichment-decoupled.md)
 
 ### Mock data (illustrative, non-executable)
 - [Snapshot manifest](mock-data/manifest.json)
 - [Test records](mock-data/tests.jsonl)
 - [Search results](mock-data/search-results.json)
 - [Coverage evaluation](mock-data/coverage-evaluation.json)
+- [Rally enrichment manifest](mock-data/rally-manifest.json)
+- [Rally enrichment records](mock-data/rally-enrichment.jsonl)
 
 ## End-to-end operating model
 
@@ -71,6 +76,10 @@ flowchart LR
     K --> L["REUSE / EXTEND / NEW / REVIEW"]
   end
 ```
+
+## Rally enrichment (independent of main merges)
+
+Every automation TC is expected to link to a Rally Test Case. The static index records that link, while a separate read-only Rally WSAPI refresh resolves existence and last **recorded** result into `rally-enrichment.jsonl` and `rally-manifest.json` on the catalog branch. Results are historical Rally observations, **not** current CI/runtime statuses. A missing Rally item might be deleted, inaccessible or moved; disappearance does not automatically invalidate automation tests. See [Rally enrichment design](docs/11-rally-enrichment.md).
 
 ## Explicit non-goals
 

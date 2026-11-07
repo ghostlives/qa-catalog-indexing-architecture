@@ -22,6 +22,18 @@ The system must preserve previous valid data and communicate uncertainty instead
 | LLM evaluates incomplete evidence | Missing obligations or source | REVIEW/UNKNOWN, not confident REUSE or NEW |
 | Sensitive literals extracted | Redaction/schema scanning | Reject publication and remediate source/extractor |
 
+## Rally-specific failures
+
+| Failure | Handling |
+| --- | --- |
+| TC reference extracted but Rally lookup returns no rows | NOT_FOUND_UNCONFIRMED; do not assume deletion |
+| Rally API returns 401/403 or inconsistent workspace results | ACCESS_DENIED/AMBIGUOUS, explicit project scope |
+| Rally returns no result records | NO_RESULT if query completed; distinct from NOT_QUERIED |
+| Rally latest recorded verdict is older than CI run | Display historical metadata separately from runtime status |
+| Rally refresh failed | Preserve prior overlay and mark stale/LOOKUP_ERROR |
+| Static catalog updated, overlay revision mismatched | MAPPING_STALE until reconciliation |
+| Rally metadata contains restricted information | Redact or keep in separate authorized store, not Git |
+
 ## Recovery levels
 
 **Retryable transient:** GitHub API failures, branch CAS conflicts, rate limits. Retry with bounded backoff and SHA checks.

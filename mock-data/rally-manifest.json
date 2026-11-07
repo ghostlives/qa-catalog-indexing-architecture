@@ -1,0 +1,18 @@
+{
+  "mock_data": true,
+  "schema_version": "1.0",
+  "repository": "example-org/order-automation",
+  "source_catalog_revision": "SYNTHETIC-NOT-COMPUTED",
+  "source_commit_sha": "1111111111111111111111111111111111111111",
+  "rally_instance": "rally-example",
+  "workspace_scope": ["example-workspace"],
+  "rally_fetched_at": "2026-11-07T07:30:00Z",
+  "overlay_status": "PARTIAL",
+  "distinct_rally_references": 3,
+  "resolved": 1,
+  "unconfirmed_missing": 1,
+  "access_denied": 1,
+  "catalog_file": "rally-enrichment.jsonl",
+  "catalog_sha256": "SYNTHETIC-NOT-COMPUTED",
+  "note": "Mock observations only; not queried from a real Rally tenant."
+}

@@ -21,6 +21,8 @@ flowchart LR
 | tests.jsonl | Canonical logical test records |
 | diagnostics.json | Unmapped tests, unsupported patterns, warnings, change statistics |
 | README.md | Minimal generated branch explanation |
+| rally-manifest.json | Independent Rally refresh timestamp, workspace and matched source-catalog revision |
+| rally-enrichment.jsonl | Deduplicated Rally TC validity and last stored result observations |
 
 Avoid storing raw source copies or full execution reports in this branch.
 
@@ -65,6 +67,10 @@ The qa-catalog branch can begin with a generated initial snapshot and minimal RE
 - Older run finishing late: must not supersede the catalog for newer main.
 - GitHub API rate limit: backoff/retry through CI; avoid model involvement.
 - Unauthorized actor: fail publishing without elevating broad permissions.
+
+## Independent Rally overlay publication
+
+Static source indexing and read-only Rally enrichment must not share a freshness clock. After a source snapshot is published, or on a schedule, Rally enrichment may refresh the overlay without re-running source discovery. Publish Rally overlay JSONL and manifest atomically with an optimistic branch update; preserve static artifacts unchanged. Readers compare overlay `source_catalog_revision` with the active static manifest revision and report MAPPING_STALE if unmatched. Handle concurrent source and Rally publishers through guarded ref updates and rebuild/rebase of artifact sets rather than overwriting the other producer's changes. Rally API failure preserves the last overlay but marks it stale/unavailable for current claims. See [Rally enrichment](11-rally-enrichment.md).
 
 ## Retention
 

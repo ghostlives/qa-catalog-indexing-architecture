@@ -27,6 +27,14 @@ Coverage requires a downstream obligation-to-evidence evaluation; incomplete or 
 - A missing search result is *not* proof of missing test coverage.
 - A similar test at a different testing layer is not automatically redundant.
 
+## Rally enrichment integrity
+
+- Index-time Rally link parsing and scheduled Rally WSAPI enrichment must both use zero LLM calls.
+- Do not infer Rally case deletion from a failed lookup or missing query result; retain separate inaccessible, uncertain and confirmed-deleted statuses.
+- Do not equate a historical stored Rally verdict with current CI/runtime automation state; preserve fetched-at and executed-at separately.
+- Refresh result metadata on a separate cadence since Rally may change without source code changes.
+- Rally API credentials remain outside Git; respect distinct Rally and GitHub access scopes before publishing enrichment to a branch.
+
 ## Security and data handling
 
 - Default to a private design repository and private/permissioned automation repositories.

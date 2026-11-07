@@ -22,6 +22,8 @@ The contract must represent both logical test cases and execution variants, supp
 | logical_name | string | Yes | Test case definition label |
 | variants | array | Yes | Discovered execution identities/configurations |
 | tags | array | Yes | Explicit framework tags/traits/labels |
+| rally_links | array | Yes | Source-extracted Rally identifiers, tenant/workspace and mapping provenance; empty if unresolved, with diagnostics |
+| rally_mapping_status | enum | Yes | LINKED, MISSING_REFERENCE, AMBIGUOUS, UNPARSEABLE |
 | searchable | object | Yes | Lexical/structured retrieval signals |
 | evidence | array | Yes | Extracted facts with source references |
 | dependencies | array | Yes | Referenced helpers/fixtures/API clients |
@@ -87,6 +89,12 @@ Store source code pointers, not full method bodies. Large fixtures, secrets, req
 | files | Yes | Catalog artifacts and integrity hashes |
 
 Time-of-generation is useful operational metadata but is excluded from deterministic content comparison.
+
+## Rally dynamic overlay contract
+
+Rally **observations** are stored separately from immutable source metadata, in `rally-enrichment.jsonl` and `rally-manifest.json`. The overlay is keyed by tenant/instance, workspace and stable object identity when available; it carries `source_catalog_revision`, `rally_fetched_at`, resolution state, and `last_recorded_result` with verdict, execution date, result record ID/source field and observation timestamp.
+
+Legal lookup states include FOUND, NOT_FOUND_UNCONFIRMED, DELETED_CONFIRMED (independent evidence required), ACCESS_DENIED, AMBIGUOUS, LOOKUP_ERROR, UNKNOWN. Last-recorded-result states include HAS_RESULT, NO_RESULT, NOT_QUERIED, LOOKUP_FAILED. No Rally result field represents live runtime automation status. Stale/mismatched overlays must be identified. Details in [Rally enrichment](11-rally-enrichment.md).
 
 ## Forward compatibility
 

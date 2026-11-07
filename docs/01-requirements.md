@@ -8,6 +8,7 @@
 - Feature and modernization specifications vary (e.g., SpecKit, custom SDD).
 - QA must reuse existing tests where they already verify the required behavior.
 - Local coding agents are available with GitHub CLI; a dedicated MCP server is not desired.
+- Every automation TC is expected to have a Rally Test Case reference. Linked Rally TCs may be unavailable/deleted; found TCs may have a last recorded Rally result that is distinct from live CI execution.
 - GitHub Actions can be used where runners and repository policy permit it.
 
 ## Goals
@@ -58,6 +59,10 @@
 | FR-10 | Fetch source evidence lazily at pinned SHA | Must |
 | FR-11 | Support multi-repo federation through a shared schema | Should |
 | FR-12 | Incrementally reuse unchanged parsed results when measured need exists | Could |
+| FR-13 | Extract Rally TC references during source indexing without calling Rally | Must |
+| FR-14 | Resolve Rally link identity/existence using read-only WSAPI enrichment with explicit uncertainty | Should |
+| FR-15 | Capture latest recorded Rally result with provenance/date, never as current runtime test status | Should |
+| FR-16 | Refresh Rally metadata without rebuilding source snapshot and track independent freshness | Should |
 
 ## Non-functional requirements
 

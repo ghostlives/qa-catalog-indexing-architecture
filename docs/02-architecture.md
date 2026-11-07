@@ -51,6 +51,11 @@ flowchart TD
 | Local search cache | Catalog records | Ranked candidate IDs | No |
 | Evidence fetch | Candidate ID and pinned source SHA | Source ranges, fixtures, assertions | No |
 | Coverage evaluator | Requirement obligations and selected evidence | REUSE / EXTEND / NEW / REVIEW | Yes, on demand |
+| Rally enrichment | Deduplicated TC links + read-only Rally observations | Case resolution, historical last-result overlay | No |
+
+## Rally enrichment extension
+
+The deterministic catalog records Rally TC references but does not require Rally to be available during source indexing. A separate read-only Rally enrichment job resolves references and stores `rally-manifest.json` + `rally-enrichment.jsonl` with `rally_fetched_at`, source-catalog revision and workspace context. This independent overlay supports result changes even when no code is merged. A missing case is not automatically classified as deleted (permission, workspace, and scope changes must be ruled out). Historical Rally verdict and current CI/runtime execution status are separate facts. See [Rally enrichment](11-rally-enrichment.md).
 
 ## Data ownership
 

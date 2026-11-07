@@ -21,6 +21,17 @@ This design deliberately leaves the following decisions for a real repository Po
 | OQ-15 | When should deterministic search add semantic retrieval? | When Recall@K benchmark justifies |
 | OQ-16 | How will cross-repo permissions be maintained under a centralized cache? | Enforce source repo access on every query |
 
+## Additional Rally questions
+
+- Where are Rally TC references stored in each framework (annotations, tags, test metadata, external mappings)?
+- Is linkage one-to-one, many-to-one, or occasionally one-to-many?
+- What constitutes a "valid" Rally TC: existence, lifecycle state, or an organization's custom field?
+- Which Rally instance, workspace and project scope are authorized for lookup?
+- Should latest result be global per Test Case or scoped to Test Set/environment?
+- Which WSAPI last-result fields are available in the enterprise tenant?
+- Are Rally result metadata and project names allowed on GitHub catalog branches under security policy?
+- How often do Rally results update without code merges, and what freshness threshold is required?
+
 ## Decisions intentionally deferred
 
 1. Specific indexer programming language.

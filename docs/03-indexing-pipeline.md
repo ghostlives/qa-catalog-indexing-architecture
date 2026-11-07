@@ -54,6 +54,10 @@ The architecture assumes a repository has an available GitHub Actions runner. En
 - Tree-sitter can be used for syntax-level extraction for further languages; semantic binding is language-specific.
 - Unknown extraction fields are explicitly null/unknown and carry a reason.
 
+## Rally link extraction
+
+Every logical automation TC is expected to have a Rally TC link; include this as a deterministic extraction signal (e.g. test annotation, tag, attribute or controlled mapping). Record `rally_links[]`, the source of the link and a mapping status. If a mapping cannot be found, report a link-hygiene diagnostic instead of dropping the automation test. **Do not fetch Rally results inside framework discovery or AST parsing.** A separate Rally enrichment refresh handles existence and last stored result, even without a new code merge. See [Rally design](11-rally-enrichment.md).
+
 ## Parser strategy
 
 Extract **observed signals**, not synthesized behavioral descriptions:
